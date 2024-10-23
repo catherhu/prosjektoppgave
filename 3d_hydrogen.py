@@ -9,7 +9,7 @@ from math import factorial
 import os
 
 # constants:
-r_max = 20 # radial boundaries
+r_max = 10 # radial boundaries
 L = 1 # mapping constant
 alpha = 2*L/r_max # mapping constant
 
@@ -48,6 +48,7 @@ def setup_matrix(N, l):
     D = np.zeros((N + 1, N + 1))
 
     for i in range(1, N):
+
         for j in range(1, N):
             if i == j:
                 D[i][j] = (-1/3)*N*(N + 1)/(1 - x[i]**2)/dr_dx[i]**2
@@ -85,7 +86,7 @@ def radial_analytical(l, n, r_max):
 
     return(r, R)
 
-def plot_radial(r_max, n_max):
+def plot_radial(N, r_max, n_max):
     
     l_list = list(range(n_max))
 
@@ -93,7 +94,6 @@ def plot_radial(r_max, n_max):
         r, R = radial(N, l)
 
         for i in range(l, n_max):
-
             n = i + 1
             R_n = R[i]
             plt.plot(r[1: -1], -R_n, label = f"{n}{l}")
@@ -107,8 +107,47 @@ def plot_radial(r_max, n_max):
             plt.legend()
             plt.savefig("3d_hydrogen_radial.png")
 
+def plot_pdf(N, n_max):
 
-plot_radial(r_max, n_max = 3)
+    l_list = list(range(n_max))
+
+    x_mesh, y_mesh, z_mesh = np.mgrid[-1 : 1 : (N - 1)*1j, -1 : 1 : (N - 1)*1j, -1 : 1 : (N - 1)*1j]
+
+    r_int = np.sqrt(x_mesh**2 + y_mesh**2 + z_mesh**2)
+    phi = np.arctan2(np.sqrt(x_mesh**2 + y_mesh**2), z_mesh)
+    theta = np.arctan2(y_mesh, x_mesh)
+
+    for l in l_list:
+        r, R = radial(N, l)
+
+        for m in range(0, l + 1):
+            Y = sph_harm(m, l, theta, phi)
+
+            for i in range(l, n_max):
+                n = i + 1
+
+                cs = CubicSpline(r[1: -1], R[i])
+                R_int_n = cs(r_int)
+
+                pdf = R_int_n ** 2 * np.abs(Y) ** 2
+
+                fig = go.Figure(data=go.Volume(
+                x=x_mesh.flatten(),
+                y=y_mesh.flatten(),
+                z=z_mesh.flatten(),
+                value=pdf.flatten(),
+                #isomin=0.1,
+                #isomax=0.8,
+                opacity=0.05, 
+                surface_count=50,
+                ))
+
+                fig.write_image(os.path.join("plots", f"hydrogen_pdf_{n}{l}{m}.png"))
+                fig.write_html(os.path.join("htmls", f"hydrogen_pdf_{n}{l}{m}.html"))
+
+
+plot_radial(N, r_max, n_max = 3)
+plot_pdf(N, n_max = 3)
 
 
 
