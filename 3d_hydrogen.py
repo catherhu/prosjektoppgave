@@ -2,18 +2,18 @@ import numpy as np
 import matplotlib.pyplot as plt
 from numpy import linalg as LA
 from scipy.special import sph_harm
-from scipy.special import laguerre
+from scipy.special import genlaguerre
 import plotly.graph_objects as go
 from scipy.interpolate import CubicSpline
 from math import factorial
 import os
 
 # constants:
-r_max = 10 # radial boundaries
+r_max = 30 # radial boundaries
 L = 1 # mapping constant
 alpha = 2*L/r_max # mapping constant
 
-N = 50
+N = 1000
 
 
 def setup_grid(N):
@@ -42,7 +42,7 @@ def setup_matrix(N, l):
 
     M = np.zeros((N + 1, N + 1))
     d = np.zeros(N + 1)
-    d[1: -1] = V + l*(l + 1)/(2*r[1: -1]) # values on the diagonal
+    d[1: -1] = V + l * (l + 1) / (2 * r[1: -1] ** 2) # values on the diagonal
     np.fill_diagonal(M, d)
 
     D = np.zeros((N + 1, N + 1))
@@ -65,26 +65,31 @@ def radial(N, l):
     M, r, dr_dx, P_x = setup_matrix(N, l)
 
     E, eigf = LA.eigh(M)
+    print(E[0:3])
     f = eigf.T * P_x[1: -1]
     u = f / np.sqrt(dr_dx[1: -1])
-
+    
     R = u / r[1: -1]
-    integral = np.sum(2 / (N * (N + 1) * P_x[1: -1] ** 2) * f**2)
-    R_norm = R / np.sqrt(integral)
 
+    R_norm = np.zeros((N - 1, N - 1))
+
+    for i in range(len(f)):
+        integral = np.sum(2 / (N * (N + 1) * P_x[1: -1] ** 2) * f[i]**2)
+        R_norm[i] = R[i] / np.sqrt(integral)
+        
     return(r, R_norm)
 
 
 def radial_analytical(l, n, r_max):
 
-    a0 = 0.529
     r = np.linspace(0, r_max, 100)
 
-    norm_const = np.sqrt(((2 / (n * a0)) ** 3 * factorial(n - l - 1)) / (2 * n * factorial(n + l) ** 3))
-    laguerre_pol = laguerre(n - l - 1, 2 * l + 1)(2 * r / (n * a0))
-    R = norm_const * np.exp(-r / (n * a0)) * (2 * r / (n * a0))**l * laguerre_pol
+    norm_c = np.sqrt((2 / n) ** 3 * factorial(n - l - 1) / (2 * n * factorial(n + l)))
+    lag_pol = genlaguerre(n - l - 1, 2 * l + 1)(2 * r / n)
+    R = norm_c * np.exp(-r / n) * (2 * r / n) ** l * lag_pol
 
     return(r, R)
+
 
 def plot_radial(N, r_max, n_max):
     
@@ -95,23 +100,24 @@ def plot_radial(N, r_max, n_max):
 
         for i in range(l, n_max):
             n = i + 1
-            R_n = R[i]
-            plt.plot(r[1: -1], -R_n, label = f"{n}{l}")
+
+            plt.plot(r[1: -1], R[i], label = f"{n}{l}")
 
             r_an, R_n_an = radial_analytical(l, n, r_max)
             plt.plot(r_an, R_n_an, label = f"{n}{l} analytical")
 
-            plt.xlim(0, r_max)
-            plt.ylim(-0.02, 0.15)
+            plt.xlim(0, 5)
+            #plt.xlim(0, r_max)
             plt.grid()
             plt.legend()
             plt.savefig("3d_hydrogen_radial.png")
+
 
 def plot_pdf(N, n_max):
 
     l_list = list(range(n_max))
 
-    x_mesh, y_mesh, z_mesh = np.mgrid[-1 : 1 : (N - 1)*1j, -1 : 1 : (N - 1)*1j, -1 : 1 : (N - 1)*1j]
+    x_mesh, y_mesh, z_mesh = np.mgrid[-18 : 18 : (N - 1)*1j, -18 : 18 : (N - 1)*1j, -18 : 18 : (N - 1)*1j]
 
     r_int = np.sqrt(x_mesh**2 + y_mesh**2 + z_mesh**2)
     phi = np.arctan2(np.sqrt(x_mesh**2 + y_mesh**2), z_mesh)
@@ -124,11 +130,9 @@ def plot_pdf(N, n_max):
             Y = sph_harm(m, l, theta, phi)
 
             for i in range(l, n_max):
-                n = i + 1
-
                 cs = CubicSpline(r[1: -1], R[i])
                 R_int_n = cs(r_int)
-
+               
                 pdf = R_int_n ** 2 * np.abs(Y) ** 2
 
                 fig = go.Figure(data=go.Volume(
@@ -139,15 +143,15 @@ def plot_pdf(N, n_max):
                 #isomin=0.1,
                 #isomax=0.8,
                 opacity=0.05, 
-                surface_count=50,
+                surface_count=100,
                 ))
 
-                fig.write_image(os.path.join("plots", f"hydrogen_pdf_{n}{l}{m}.png"))
-                fig.write_html(os.path.join("htmls", f"hydrogen_pdf_{n}{l}{m}.html"))
+                fig.write_image(os.path.join("plots", f"hydrogen_pdf_{i + 1}{l}{m}.png"))
+                fig.write_html(os.path.join("htmls", f"hydrogen_pdf_{i + 1}{l}{m}.html"))
 
 
 plot_radial(N, r_max, n_max = 3)
-plot_pdf(N, n_max = 3)
+#plot_pdf(N, n_max = 3)
 
 
 
