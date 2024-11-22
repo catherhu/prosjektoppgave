@@ -13,7 +13,7 @@ r_max = 30 # radial boundaries
 L = 1 # mapping constant
 alpha = 2*L/r_max # mapping constant
 
-N = 1000
+N = 50
 
 
 def setup_grid(N):
@@ -65,7 +65,6 @@ def radial(N, l):
     M, r, dr_dx, P_x = setup_matrix(N, l)
 
     E, eigf = LA.eigh(M)
-    print(E[0:3])
     f = eigf.T * P_x[1: -1]
     u = f / np.sqrt(dr_dx[1: -1])
     
@@ -80,20 +79,19 @@ def radial(N, l):
     return(r, R_norm)
 
 
-def radial_analytical(l, n, r_max):
-
-    r = np.linspace(0, r_max, 100)
+def radial_analytical(l, n, r):
 
     norm_c = np.sqrt((2 / n) ** 3 * factorial(n - l - 1) / (2 * n * factorial(n + l)))
     lag_pol = genlaguerre(n - l - 1, 2 * l + 1)(2 * r / n)
     R = norm_c * np.exp(-r / n) * (2 * r / n) ** l * lag_pol
 
-    return(r, R)
-
+    return R
 
 def plot_radial(N, r_max, n_max):
     
     l_list = list(range(n_max))
+
+    plt.figure()
 
     for l in l_list:
         r, R = radial(N, l)
@@ -101,10 +99,10 @@ def plot_radial(N, r_max, n_max):
         for i in range(l, n_max):
             n = i + 1
 
-            plt.plot(r[1: -1], R[i], label = f"{n}{l}")
+            plt.plot(r[1: -1], -R[i], label = f"{n}{l}")
 
-            r_an, R_n_an = radial_analytical(l, n, r_max)
-            plt.plot(r_an, R_n_an, label = f"{n}{l} analytical")
+            R_an = radial_analytical(l, n, r[1:-1])
+            plt.plot(r[1: -1], R_an, label = f"{n}{l} analytical")
 
             plt.xlim(0, 5)
             #plt.xlim(0, r_max)
@@ -113,11 +111,33 @@ def plot_radial(N, r_max, n_max):
             plt.savefig("3d_hydrogen_radial.png")
 
 
+def plot_error(N, r_max, n_max):
+
+    l_list = list(range(n_max))
+
+    plt.figure()
+
+    for l in l_list:
+        r, R = radial(N, l)
+
+        for i in range(l, n_max):
+            n = i + 1
+
+            R_an = radial_analytical(l, n, r[1: -1])
+
+            plt.semilogy(r[1: -1], np.abs(np.abs(R_an) - np.abs(R[i])), label = f"{n}{l} error")
+
+            plt.xlim(0, r_max)
+            plt.grid()
+            plt.legend()
+            plt.savefig("error.png")
+
+
 def plot_pdf(N, n_max):
 
     l_list = list(range(n_max))
 
-    x_mesh, y_mesh, z_mesh = np.mgrid[-18 : 18 : (N - 1)*1j, -18 : 18 : (N - 1)*1j, -18 : 18 : (N - 1)*1j]
+    x_mesh, y_mesh, z_mesh = np.mgrid[-17 : 17 : (N - 1)*1j, -17 : 17 : (N - 1)*1j, -17 : 17 : (N - 1)*1j]
 
     r_int = np.sqrt(x_mesh**2 + y_mesh**2 + z_mesh**2)
     phi = np.arctan2(np.sqrt(x_mesh**2 + y_mesh**2), z_mesh)
@@ -126,15 +146,16 @@ def plot_pdf(N, n_max):
     for l in l_list:
         r, R = radial(N, l)
 
-        for m in range(0, l + 1):
+        for m in range(-l, l + 1):
             Y = sph_harm(m, l, theta, phi)
 
+            p_x_orb = np.zeros((N - 1, N - 1, N - 1), dtype = complex)
             for i in range(l, n_max):
                 cs = CubicSpline(r[1: -1], R[i])
                 R_int_n = cs(r_int)
                
                 pdf = R_int_n ** 2 * np.abs(Y) ** 2
-
+                
                 fig = go.Figure(data=go.Volume(
                 x=x_mesh.flatten(),
                 y=y_mesh.flatten(),
@@ -145,13 +166,14 @@ def plot_pdf(N, n_max):
                 opacity=0.05, 
                 surface_count=100,
                 ))
-
+                
                 fig.write_image(os.path.join("plots", f"hydrogen_pdf_{i + 1}{l}{m}.png"))
                 fig.write_html(os.path.join("htmls", f"hydrogen_pdf_{i + 1}{l}{m}.html"))
 
 
 plot_radial(N, r_max, n_max = 3)
-#plot_pdf(N, n_max = 3)
+plot_error(N, r_max, n_max = 3)
+plot_pdf(N, n_max = 3)
 
 
 
