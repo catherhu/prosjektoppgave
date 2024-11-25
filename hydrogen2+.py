@@ -16,7 +16,7 @@ alpha = 2*L/r_max # mapping constant
 a = 5 # spacial shift of potential
 
 N = 50
-l_cutoff = 3
+l_cutoff = 50
 
 
 def setup_grid(N):
@@ -112,6 +112,7 @@ def setup_matrix(l_cutoff, N, x, r, dr_dx):
 
     return M_block
 
+
 def radial(l_cutoff, N):
 
     x, r, dr_dx, P_x = setup_grid(N)
@@ -131,13 +132,17 @@ def radial(l_cutoff, N):
             integral = np.sum(2 / (N * (N + 1) * P_x[1: -1] ** 2) * f[i][j]**2)
             R_norm[i][j] = R[i][j] / np.sqrt(integral)
         
-    return(r, R_norm)
+    return(r[1: -1], R_norm)
 
 
-def plot_radial(N, r_max, n_cutoff):
+def plot_radial(l_cutoff, N, r_max, n_cutoff):
+
+    r, R = radial(l_cutoff, N)
 
     plt.figure()
+    plt.plot(r, R[0][0])
+    plt.savefig("hydrogen2+_radial.png")
 
 
-plot_radial(N, r_max, n_cutoff = 3)
+plot_radial(l_cutoff, N, r_max, n_cutoff = 3)
 #plot_pdf(N, n_cutoff = 3)
