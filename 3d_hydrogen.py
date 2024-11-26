@@ -149,7 +149,6 @@ def plot_pdf(N, n_max):
         for m in range(-l, l + 1):
             Y = sph_harm(m, l, theta, phi)
 
-            p_x_orb = np.zeros((N - 1, N - 1, N - 1), dtype = complex)
             for i in range(l, n_max):
                 cs = CubicSpline(r[1: -1], R[i])
                 R_int_n = cs(r_int)
