@@ -1,5 +1,4 @@
 import numpy as np
-from math import factorial
 import matplotlib.pyplot as plt
 from numpy import linalg as LA
 from scipy.special import sph_harm
@@ -13,10 +12,10 @@ r_max = 30 # radial boundaries
 L = 1 # mapping constant
 alpha = 2*L/r_max # mapping constant
 
-a = 1 # spacial shift of potential
+a = 2 # spacial shift of potential
 
 N = 100
-l_cutoff = 20
+#l_cutoff = 
 
 
 def setup_grid(N):
@@ -32,8 +31,10 @@ def setup_grid(N):
 
     P_x = np.polynomial.legendre.legval(x, P) # evaluating polynomial at grid points
 
-    r = L*(1 + x)/(1 - x + alpha) # radial grid points
-    dr_dx = L*(2 + alpha)/(1 - x + alpha)**2
+    r = r_max/2 * (x + 1)
+    #r = L*(1 + x)/(1 - x + alpha) # radial grid points
+    dr_dx = r_max/2 * np.ones_like(r)
+    #dr_dx = L*(2 + alpha)/(1 - x + alpha)**2
 
     return(x, r, dr_dx, P_x)
 
@@ -46,9 +47,12 @@ def potential(r, l1, l2, l_cutoff, a):
 
     for l3 in range(l_cutoff):
         gaunt_coeff = float(gaunt(l1, l2, l3, 0, 0, 0).n(64))
+    
         V1 += np.sqrt(4*np.pi/(2*l3 + 1)) * np.minimum(a_array, r[1: -1]) ** l3 / np.maximum(a_array, r[1: -1]) ** (l3 + 1) * gaunt_coeff
-        V2 += (-1)**l3 * np.sqrt(4*np.pi/(2*l3 + 1)) * np.minimum(-a_array, r[1: -1]) ** l3 / np.maximum(a_array, r[1: -1]) ** (l3 + 1) * gaunt_coeff
-        V = V1 + V2
+        #V2 += (-1)**l3 * np.sqrt(4*np.pi/(2*l3 + 1)) * np.minimum(a_array, r[1: -1]) ** l3 / np.maximum(a_array, r[1: -1]) ** (l3 + 1) * gaunt_coeff
+  
+    V = V1 + V2
+
     return -V
 
 
@@ -61,7 +65,7 @@ def setup_submatrix(l1, l2, l_cutoff, N, x, r, dr_dx):
     d[1: -1] = V 
 
     if l1 == l2:
-        d[1: -1] += l1 * (l1 + 1) / (2 * r[1: -1] ** 2)
+        d[1: -1] += l1 * (l1 + 1) / (2 * r[1: -1] ** 2) - 1/r[1: -1]
 
     np.fill_diagonal(M, d)
 
@@ -91,11 +95,6 @@ def setup_matrix(l_cutoff, N, x, r, dr_dx):
         for l2 in range(l_cutoff):
             M = setup_submatrix(l1, l2, l_cutoff, N, x, r, dr_dx)
 
-            """
-            for row in M:
-                print("    ".join(f"{element:5.2f}" for element in row))
-            """
-
             for i in range(N - 1):
 
                 for j in range(N - 1):
@@ -103,14 +102,6 @@ def setup_matrix(l_cutoff, N, x, r, dr_dx):
                     j_ = j + l2 * (N - 1)
             
                     M_block[i_][j_] = M[i][j]
-
-    """
-    plt.figure()
-    plt.imshow(M_block)
-    plt.savefig("M_matrix.png")   
-    for row in M_block:
-        print("    ".join(f"{element:5.2f}" for element in row))
-    """
 
     return M_block
 
@@ -121,21 +112,24 @@ def radial(l_cutoff, N):
     M = setup_matrix(l_cutoff, N, x, r, dr_dx)
 
     E, eigf = LA.eigh(M)
-    print(E[0:4])
-    f = np.hsplit(eigf.T, l_cutoff) * P_x[1: -1]
+
+    print(E[0] + 0.5)
+    E_true = -0.597
+    error = abs(E_true - E[0])
+
+    split_eigf = np.hsplit(eigf.T, l_cutoff)
+    sum_l_eigf = np.sum(split_eigf, axis = 0)
+    f = sum_l_eigf * P_x[1: -1]
     u = f / np.sqrt(dr_dx[1: -1])
     
     R = u / r[1: -1]
-
     R_norm = np.zeros_like(R)
 
-    for i in range(l_cutoff):
-
-        for j in range((N - 1)*l_cutoff):
-            integral = np.sum(2 / (N * (N + 1) * P_x[1: -1] ** 2) * f[i][j]**2)
-            R_norm[i][j] = R[i][j] / np.sqrt(integral)
+    for i in range((N - 1)*l_cutoff):
+        integral = np.sum(2 / (N * (N + 1) * P_x[1: -1] ** 2) * f[i]**2)
+        R_norm[i] = R[i] / np.sqrt(integral)
         
-    return(r[1: -1], R_norm)
+    return(r[1: -1], R_norm, error)
 
 
 def plot_pdf(l_cutoff, N, n_cutoff):
@@ -148,13 +142,11 @@ def plot_pdf(l_cutoff, N, n_cutoff):
 
     r, R = radial(l_cutoff, N)
 
-    R_l_sum = np.sum(R, axis = 0)
-
     for l in [0, 1, 2]:
         Y = sph_harm(0, l, theta, phi)
 
         for i in range(l, n_cutoff):
-                cs = CubicSpline(r, R_l_sum[i])
+                cs = CubicSpline(r, R[i])
                 R_int_n = cs(r_int)
                
                 pdf = R_int_n ** 2 * np.abs(Y) ** 2
@@ -173,5 +165,20 @@ def plot_pdf(l_cutoff, N, n_cutoff):
                 fig.write_image(os.path.join("plots_hydrogen2+", f"hydrogen2+_pdf_{i + 1}{l}{0}.png"))
                 fig.write_html(os.path.join("htmls_hydrogen2+", f"hydrogen2+_pdf_{i + 1}{l}{0}.html"))
 
-radial(l_cutoff, N)
+l_cutoff_list = [11, 21, 31]
+error_list = []
+
+for l_cutoff in l_cutoff_list:
+    r, R_norm, error = radial(l_cutoff, N)
+    error_list.append(error)
+
+"""
+plt.figure()
+plt.plot(l_cutoff_list, error_list)
+plt.savefig("error_energy.png")
+
+plt.figure()
+plt.semilogy(l_cutoff_list, error_list)
+plt.savefig("error_energy_logscale.png")
+"""
 #plot_pdf(l_cutoff, N, n_cutoff = 3)
