@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from numpy import linalg as LA
 from scipy.special import sph_harm
+from scipy.special import erf
 from scipy.interpolate import CubicSpline
 from sympy.physics.wigner import gaunt
 import plotly.graph_objects as go
@@ -11,11 +12,12 @@ import os
 r_max = 30 # radial boundaries
 L = 1 # mapping constant
 alpha = 2*L/r_max # mapping constant
+mu = 5 # regularization constant
 
 a = 2 # spacial shift of potential
 
-N = 100
-#l_cutoff = 
+N = 100 # grid size
+l_cutoff = 10
 
 
 def setup_grid(N):
@@ -38,6 +40,64 @@ def setup_grid(N):
 
     return(x, r, dr_dx, P_x)
 
+
+def erf_func(r, a, theta, mu):
+
+    r_a = np.sqrt(r**2 - 2*a*r*np.cos(theta) + a**2)
+
+    if r_a == 0:
+        return 2*mu/np.sqrt(np.pi)
+    else:
+        return erf(mu*r_a)/r_a
+
+
+def test_potential_regularization(a, mu, N):
+
+    x, r, dr_dx, P_x = setup_grid(N)
+    r_inner = r[1:-1]
+    print(r_inner)
+    a_array = np.ones(N - 1) * a
+    N_lebedev = 101
+    coord = np.loadtxt("Lebedev/lebedev_%03d.txt" % N_lebedev)
+    phi = coord[:, 0] * np.pi / 180 + np.pi
+    theta = coord[:, 1] * np.pi / 180
+    lebedev_weights = coord[:, 2]
+    n_theta = len(theta)
+
+    print(f"a: {a}, mu: {mu}, N: {N}")
+
+    erf_array = np.zeros((N-1, n_theta))
+
+    for i in range(N-1):
+        for j in range(n_theta):
+            erf_array[i,j] = erf_func(r_inner[i], a, theta[j], mu)
+    print(erf_array[0,0])
+    #plt.plot(r_inner, erf_array[:, 0])
+    #plt.plot(r_inner, erf_array[:, n_theta//2], label = "n_theta/2")
+    #plt.legend()
+    #plt.savefig("test.png")
+    for l in range(3):
+
+        V_l = np.sqrt(4*np.pi/(2*l + 1)) * np.minimum(a_array, r[1: -1]) ** l / np.maximum(a_array, r[1: -1]) ** (l + 1)
+
+        
+
+        Y = sph_harm(0, l, phi, theta).real
+
+        f_l = np.zeros(N - 1)
+        for j in range(n_theta):
+            f_l += 4*np.pi*erf_array[:,j]*Y[j]*lebedev_weights[j]
+        """
+        for i in range(N - 1):
+            for j in range(n_theta):
+                f_l[i] += 4 * np.pi * erf_func(r_inner[i], a, theta[j], mu) * Y[j] * lebedev_weights[j]
+        """
+        #f_l *= np.sqrt((2*l + 1)/(4*np.pi))
+        
+        plt.plot(r[1: -1], V_l, label = "V_l")
+        plt.plot(r[1: -1], f_l, label = r"$f_%d$" % l)
+        plt.legend()
+        plt.savefig("test_potential_regularization.png")
 
 def potential(r, l1, l2, l_cutoff, a):
     
@@ -150,7 +210,6 @@ def plot_pdf(l_cutoff, N, n_cutoff):
                 R_int_n = cs(r_int)
                
                 pdf = R_int_n ** 2 * np.abs(Y) ** 2
-                
                 fig = go.Figure(data=go.Volume(
                 x=x_mesh.flatten(),
                 y=y_mesh.flatten(),
@@ -165,20 +224,5 @@ def plot_pdf(l_cutoff, N, n_cutoff):
                 fig.write_image(os.path.join("plots_hydrogen2+", f"hydrogen2+_pdf_{i + 1}{l}{0}.png"))
                 fig.write_html(os.path.join("htmls_hydrogen2+", f"hydrogen2+_pdf_{i + 1}{l}{0}.html"))
 
-l_cutoff_list = [11, 21, 31]
-error_list = []
-
-for l_cutoff in l_cutoff_list:
-    r, R_norm, error = radial(l_cutoff, N)
-    error_list.append(error)
-
-"""
-plt.figure()
-plt.plot(l_cutoff_list, error_list)
-plt.savefig("error_energy.png")
-
-plt.figure()
-plt.semilogy(l_cutoff_list, error_list)
-plt.savefig("error_energy_logscale.png")
-"""
+test_potential_regularization(a, mu, N)
 #plot_pdf(l_cutoff, N, n_cutoff = 3)
