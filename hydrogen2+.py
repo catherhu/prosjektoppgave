@@ -6,18 +6,17 @@ from scipy.special import erf
 from scipy.interpolate import CubicSpline
 from sympy.physics.wigner import gaunt
 import plotly.graph_objects as go
+import time 
 import os
 
 # constants:
 r_max = 30 # radial boundaries
-L = 1 # mapping constant
-alpha = 2*L/r_max # mapping constant
-mu = 5 # regularization constant
-
-a = 2 # spacial shift of potential
-
+mu = 30 # regularization constant
+a = 1 # spacial shift of potential
 N = 100 # grid size
 l_cutoff = 10
+#L = 1 # mapping constant
+#alpha = 2*L/r_max # mapping constant
 
 
 def setup_grid(N):
@@ -25,17 +24,14 @@ def setup_grid(N):
     P = np.zeros(N + 1) # polynomial coefficients
     P[-1] = 1 
     dP_dx = np.polynomial.legendre.legder(P) # derivative coefficients
-
     x = np.zeros(N + 1) # grid points
     x[0] = -1 
     x[N] = 1
     x[1: -1] = np.polynomial.legendre.legroots(dP_dx) # polynomial derivative roots
-
     P_x = np.polynomial.legendre.legval(x, P) # evaluating polynomial at grid points
-
     r = r_max/2 * (x + 1)
-    #r = L*(1 + x)/(1 - x + alpha) # radial grid points
     dr_dx = r_max/2 * np.ones_like(r)
+    #r = L*(1 + x)/(1 - x + alpha) # radial grid points
     #dr_dx = L*(2 + alpha)/(1 - x + alpha)**2
 
     return(x, r, dr_dx, P_x)
@@ -44,79 +40,50 @@ def setup_grid(N):
 def erf_func(r, a, theta, mu):
 
     r_a = np.sqrt(r**2 - 2*a*r*np.cos(theta) + a**2)
+    erf_array = np.where(r_a == 0, 2*mu/np.sqrt(np.pi), erf(mu*r_a)/r_a)
 
-    if r_a == 0:
-        return 2*mu/np.sqrt(np.pi)
-    else:
-        return erf(mu*r_a)/r_a
+    return erf_array
 
 
-def test_potential_regularization(a, mu, N):
+def lebedev(N_lebedev):
 
-    x, r, dr_dx, P_x = setup_grid(N)
-    r_inner = r[1:-1]
-    print(r_inner)
-    a_array = np.ones(N - 1) * a
-    N_lebedev = 101
     coord = np.loadtxt("Lebedev/lebedev_%03d.txt" % N_lebedev)
     phi = coord[:, 0] * np.pi / 180 + np.pi
     theta = coord[:, 1] * np.pi / 180
     lebedev_weights = coord[:, 2]
-    n_theta = len(theta)
 
-    print(f"a: {a}, mu: {mu}, N: {N}")
+    return(theta, phi, lebedev_weights)
 
-    erf_array = np.zeros((N-1, n_theta))
 
-    for i in range(N-1):
-        for j in range(n_theta):
-            erf_array[i,j] = erf_func(r_inner[i], a, theta[j], mu)
-    print(erf_array[0,0])
-    #plt.plot(r_inner, erf_array[:, 0])
-    #plt.plot(r_inner, erf_array[:, n_theta//2], label = "n_theta/2")
-    #plt.legend()
-    #plt.savefig("test.png")
-    for l in range(3):
+def regularized_potential(a, r, theta, phi, weights, mu, N, l):
 
-        V_l = np.sqrt(4*np.pi/(2*l + 1)) * np.minimum(a_array, r[1: -1]) ** l / np.maximum(a_array, r[1: -1]) ** (l + 1)
+    Y = sph_harm(0, l, phi, theta).real
+    erf_array = erf_func(r[:, np.newaxis], a, theta[np.newaxis,:], mu)
+    f_l = np.sum(4 * np.pi * erf_array * Y * weights, axis = 1)
 
-        
+    return f_l
 
-        Y = sph_harm(0, l, phi, theta).real
-
-        f_l = np.zeros(N - 1)
-        for j in range(n_theta):
-            f_l += 4*np.pi*erf_array[:,j]*Y[j]*lebedev_weights[j]
-        """
-        for i in range(N - 1):
-            for j in range(n_theta):
-                f_l[i] += 4 * np.pi * erf_func(r_inner[i], a, theta[j], mu) * Y[j] * lebedev_weights[j]
-        """
-        #f_l *= np.sqrt((2*l + 1)/(4*np.pi))
-        
-        plt.plot(r[1: -1], V_l, label = "V_l")
-        plt.plot(r[1: -1], f_l, label = r"$f_%d$" % l)
-        plt.legend()
-        plt.savefig("test_potential_regularization.png")
 
 def potential(r, l1, l2, l_cutoff, a):
     
-    a_array = np.ones(N - 1) * a
     V1 = np.zeros(N - 1)
     V2 = np.zeros(N - 1)
+    theta, phi, weights = lebedev(101)
 
     for l3 in range(l_cutoff):
         gaunt_coeff = float(gaunt(l1, l2, l3, 0, 0, 0).n(64))
-    
-        V1 += np.sqrt(4*np.pi/(2*l3 + 1)) * np.minimum(a_array, r[1: -1]) ** l3 / np.maximum(a_array, r[1: -1]) ** (l3 + 1) * gaunt_coeff
-        #V2 += (-1)**l3 * np.sqrt(4*np.pi/(2*l3 + 1)) * np.minimum(a_array, r[1: -1]) ** l3 / np.maximum(a_array, r[1: -1]) ** (l3 + 1) * gaunt_coeff
-  
+        #tic = time.time()    
+        V1 += regularized_potential(a, r[1: -1], theta, phi, weights, mu, N, l3) * gaunt_coeff
+        V2 += regularized_potential(-a, r[1: -1], theta, phi, weights, mu, N, l3) * gaunt_coeff
+        #toc = time.time()
+        #print(f"Time: {toc-tic}") 
+        
     V = V1 + V2
 
     return -V
 
 
-def setup_submatrix(l1, l2, l_cutoff, N, x, r, dr_dx):
+def setup_submatrix(l1, l2, l_cutoff, N, x, r, D):
 
     V = potential(r, l1, l2, l_cutoff, a)
 
@@ -125,21 +92,11 @@ def setup_submatrix(l1, l2, l_cutoff, N, x, r, dr_dx):
     d[1: -1] = V 
 
     if l1 == l2:
-        d[1: -1] += l1 * (l1 + 1) / (2 * r[1: -1] ** 2) - 1/r[1: -1]
+        d[1: -1] += l1 * (l1 + 1) / (2 * r[1: -1] ** 2)
 
     np.fill_diagonal(M, d)
 
     if l1 == l2:
-        D = np.zeros((N + 1, N + 1))
-
-        for i in range(1, N):
-
-            for j in range(1, N):
-                if i == j:
-                    D[i][j] = (-1/3)*N*(N + 1)/(1 - x[i]**2)/dr_dx[i]**2
-                else:
-                    D[i][j] = -2/(x[i] - x[j])**2/(dr_dx[i]*dr_dx[j])
-
         M += -0.5*D
 
     return M[1: -1, 1: -1]
@@ -150,18 +107,22 @@ def setup_matrix(l_cutoff, N, x, r, dr_dx):
     size = (N - 1) * l_cutoff
     M_block = np.zeros((size, size))
 
+    D = np.zeros((N + 1, N + 1))
+
+    for i in range(1, N):
+
+        for j in range(1, N):
+
+            if i == j:
+                D[i][j] = (-1/3)*N*(N + 1)/(1 - x[i]**2)/dr_dx[i]**2
+            else:
+                D[i][j] = -2/(x[i] - x[j])**2/(dr_dx[i]*dr_dx[j])
+
     for l1 in range(l_cutoff):
 
         for l2 in range(l_cutoff):
-            M = setup_submatrix(l1, l2, l_cutoff, N, x, r, dr_dx)
-
-            for i in range(N - 1):
-
-                for j in range(N - 1):
-                    i_ = i + l1 * (N - 1)
-                    j_ = j + l2 * (N - 1)
-            
-                    M_block[i_][j_] = M[i][j]
+            M = setup_submatrix(l1, l2, l_cutoff, N, x, r, D)
+            M_block[l1*(N - 1): (l1 + 1)*(N - 1), l2*(N - 1): (l2 + 1)*(N - 1)] = M
 
     return M_block
 
@@ -174,14 +135,11 @@ def radial(l_cutoff, N):
     E, eigf = LA.eigh(M)
 
     print(E[0] + 0.5)
-    E_true = -0.597
-    error = abs(E_true - E[0])
 
     split_eigf = np.hsplit(eigf.T, l_cutoff)
     sum_l_eigf = np.sum(split_eigf, axis = 0)
     f = sum_l_eigf * P_x[1: -1]
     u = f / np.sqrt(dr_dx[1: -1])
-    
     R = u / r[1: -1]
     R_norm = np.zeros_like(R)
 
@@ -189,9 +147,13 @@ def radial(l_cutoff, N):
         integral = np.sum(2 / (N * (N + 1) * P_x[1: -1] ** 2) * f[i]**2)
         R_norm[i] = R[i] / np.sqrt(integral)
         
-    return(r[1: -1], R_norm, error)
+    return(r[1: -1], R_norm)
 
 
+radial(l_cutoff, N)
+
+
+"""
 def plot_pdf(l_cutoff, N, n_cutoff):
 
     x_mesh, y_mesh, z_mesh = np.mgrid[-17 : 17 : (N - 1)*1j, -17 : 17 : (N - 1)*1j, -17 : 17 : (N - 1)*1j]
@@ -223,6 +185,5 @@ def plot_pdf(l_cutoff, N, n_cutoff):
                 
                 fig.write_image(os.path.join("plots_hydrogen2+", f"hydrogen2+_pdf_{i + 1}{l}{0}.png"))
                 fig.write_html(os.path.join("htmls_hydrogen2+", f"hydrogen2+_pdf_{i + 1}{l}{0}.html"))
+"""
 
-test_potential_regularization(a, mu, N)
-#plot_pdf(l_cutoff, N, n_cutoff = 3)
