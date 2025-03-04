@@ -34,7 +34,7 @@ def setup_grid(N):
     #r = L*(1 + x)/(1 - x + alpha) # radial grid points
     #dr_dx = L*(2 + alpha)/(1 - x + alpha)**2
 
-    return(x, r, dr_dx, P_x)
+    return(x, r[1: -1], dr_dx, P_x)
 
 
 def erf_func(r, a, theta, mu):
@@ -55,26 +55,17 @@ def lebedev(N_lebedev):
     return(theta, phi, lebedev_weights)
 
 
-def regularized_potential(r, a, phi, theta, weights, l, Y, erf_array):
-
-    f_l = np.sum(4 * np.pi * erf_array * Y[l] * weights, axis = 1)
-
-    return f_l
-
-
-def potential(r, l1, l2, l_cutoff, a, Y, erf_array):
+def potential(l1, l2, l_cutoff, Y, erf_array, weights):
     
     V1 = np.zeros(N - 1)
     V2 = np.zeros(N - 1)
-    theta, phi, weights = lebedev(101)
 
     for l3 in range(l_cutoff):
-        gaunt_coeff = float(gaunt(l1, l2, l3, 0, 0, 0).n(64))
-        #tic = time.time()    
-        V1 += regularized_potential(r[1: -1], a, phi, theta, weights, l3, Y, erf_array[0]) * gaunt_coeff
-        V2 += regularized_potential(r[1: -1], -a, phi, theta, weights, l3, Y, erf_array[1]) * gaunt_coeff
-        #toc = time.time()
-        #print(f"Time: {toc-tic}") 
+        gaunt_coeff = float(gaunt(l1, l2, l3, 0, 0, 0).n(64))  
+        f_l_1 = np.sum(4 * np.pi * erf_array[0] * Y[l3] * weights, axis = 1)
+        f_l_2 = np.sum(4 * np.pi * erf_array[1] * Y[l3] * weights, axis = 1)
+        V1 += f_l_1 * gaunt_coeff
+        V2 += f_l_2 * gaunt_coeff
         
     V = V1 + V2
 
@@ -97,9 +88,9 @@ def D_matrix(N, x, dr_dx):
     return D
 
 
-def setup_submatrix(l1, l2, l_cutoff, N, r, D, Y, erf_array):
+def setup_submatrix(r, l1, l2, l_cutoff, N, D, Y, erf_array, weights):
 
-    V = potential(r, l1, l2, l_cutoff, a, Y, erf_array)
+    V = potential(l1, l2, l_cutoff, Y, erf_array, weights)
 
     M = np.zeros((N + 1, N + 1))
     d = np.zeros(N + 1)
@@ -107,14 +98,14 @@ def setup_submatrix(l1, l2, l_cutoff, N, r, D, Y, erf_array):
 
     if l1 == l2:
         M += -0.5*D
-        d[1: -1] += l1 * (l1 + 1) / (2 * r[1: -1] ** 2)
+        d[1: -1] += l1 * (l1 + 1) / (2 * r ** 2)
 
     np.fill_diagonal(M, M.diagonal() + d)
         
     return M[1: -1, 1: -1]
 
 
-def setup_matrix(l_cutoff, N, r, D, Y, erf_array):
+def setup_matrix(r, l_cutoff, N, D, Y, erf_array, weights):
 
     size = (N - 1) * l_cutoff
     M_block = np.zeros((size, size))
@@ -122,7 +113,7 @@ def setup_matrix(l_cutoff, N, r, D, Y, erf_array):
     for l1 in range(l_cutoff):
 
         for l2 in range(l_cutoff):
-            M = setup_submatrix(l1, l2, l_cutoff, N, r, D, Y, erf_array)
+            M = setup_submatrix(r, l1, l2, l_cutoff, N, D, Y, erf_array, weights)
             M_block[l1*(N - 1): (l1 + 1)*(N - 1), l2*(N - 1): (l2 + 1)*(N - 1)] = M
 
     return M_block
@@ -133,18 +124,17 @@ def radial(l_cutoff, N):
     x, r, dr_dx, P_x = setup_grid(N)
     D = D_matrix(N, x, dr_dx)
     theta, phi, weights = lebedev(101)
-    r_ = r[1: -1]
 
     erf_array = [
-    erf_func(r_[:, np.newaxis], a, theta[np.newaxis, :], mu),
-    erf_func(r_[:, np.newaxis], -a, theta[np.newaxis, :], mu)
+    erf_func(r[:, np.newaxis], a, theta[np.newaxis, :], mu),
+    erf_func(r[:, np.newaxis], -a, theta[np.newaxis, :], mu)
     ]
 
     Y = np.zeros((l_cutoff, len(theta)))
     for l in range(l_cutoff):
         Y[l] = sph_harm(0, l, phi, theta).real
     
-    M = setup_matrix(l_cutoff, N, r, D, Y, erf_array)
+    M = setup_matrix(r, l_cutoff, N, D, Y, erf_array, weights)
 
     E, eigf = LA.eigh(M)
 
@@ -154,17 +144,20 @@ def radial(l_cutoff, N):
     sum_l_eigf = np.sum(split_eigf, axis = 0)
     f = sum_l_eigf * P_x[1: -1]
     u = f / np.sqrt(dr_dx[1: -1])
-    R = u / r[1: -1]
+    R = u / r
     R_norm = np.zeros_like(R)
 
     for i in range((N - 1)*l_cutoff):
         integral = np.sum(2 / (N * (N + 1) * P_x[1: -1] ** 2) * f[i]**2)
         R_norm[i] = R[i] / np.sqrt(integral)
         
-    return(r[1: -1], R_norm)
+    return(r, R_norm)
 
 
 radial(l_cutoff, N)
+
+
+
 
 
 """
