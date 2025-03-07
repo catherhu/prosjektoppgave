@@ -8,6 +8,7 @@ from sympy.physics.wigner import gaunt
 import plotly.graph_objects as go
 import time 
 import os
+from tabulate import tabulate
 
 
 r_max = 30 # radial boundaries
@@ -85,7 +86,7 @@ def field_potential(l1, l2, l_cutoff, r, s, alpha_0, theta, leb_weights, Y):
         V = potential(l1, l2, l_cutoff, r, a, s, theta, leb_weights, Y)
         V_field += V
     
-    return V_field / n_int
+    return V_field / (n_int + 1)
 
 
 def D_matrix(N, x, dr_dx):
@@ -117,7 +118,7 @@ def setup_submatrix(l1, l2, l_cutoff, N, r, s, alpha_0, theta, leb_weights, Y, D
         d[1: -1] += l1 * (l1 + 1) / (2 * r ** 2)
 
     np.fill_diagonal(M, M.diagonal() + d)
-        
+     
     return M[1: -1, 1: -1]
 
 
@@ -128,9 +129,10 @@ def setup_matrix(l_cutoff, N, r, s, alpha_0, theta, leb_weights, Y, D):
     
     for l1 in range(l_cutoff):
 
-        for l2 in range(l_cutoff):
+        for l2 in range(l1, l_cutoff):
             M = setup_submatrix(l1, l2, l_cutoff, N, r, s, alpha_0, theta, leb_weights, Y, D)
-            M_block[l1*(N - 1): (l1 + 1)*(N - 1), l2*(N - 1): (l2 + 1)*(N - 1)] = M
+            M_block[l1*(N - 1): (l1 + 1)*(N - 1), l2*(N - 1): (l2 + 1)*(N - 1)] = M 
+            M_block[l2*(N - 1): (l2 + 1)*(N - 1), l1*(N - 1): (l1 + 1)*(N - 1)] = M
 
     return M_block
 
@@ -166,7 +168,12 @@ theta, phi, leb_weights = lebedev(101)
 Y = np.array([sph_harm(0, l, phi, theta).real for l in range(l_cutoff)])
 
 s = 2
+
+tic = time.time()
 E, R = radial(l_cutoff, N, r, s, alpha_0, theta, leb_weights, Y, D, dr_dx, P_x)
+toc = time.time()
+
+print(f"time: {toc - tic}")
 print(E)
 
 
