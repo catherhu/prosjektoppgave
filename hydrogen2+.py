@@ -12,7 +12,7 @@ from tabulate import tabulate
 
 
 r_max = 30 # radial boundaries
-N = 50 # grid size
+N = 100 # grid size
 l_cutoff = 10
 s = 2 # internuclear distance
 alpha_0 = 0.2
@@ -58,15 +58,16 @@ def potential(l1, l2, l_cutoff, r, a, s, theta, leb_weights, Y):
     V1 = np.zeros(N - 1)
     V2 = np.zeros(N - 1)
 
-    erf_array_1 = erf_func(r[:, np.newaxis], a, theta[np.newaxis, :], mu)
-    erf_array_2 = erf_func(r[:, np.newaxis], a - s, theta[np.newaxis, :], mu)
+    erf_arr_1 = erf_func(r[:, np.newaxis], a, theta[np.newaxis, :], mu)
+    erf_arr_2 = erf_func(r[:, np.newaxis], a - s, theta[np.newaxis, :], mu)
+
+    f_l_1 = 4*np.pi * np.sum(erf_arr_1[:, np.newaxis, :] * (Y * leb_weights.T)[np.newaxis, :, :], axis = 2)
+    f_l_2 = 4*np.pi * np.sum(erf_arr_2[:, np.newaxis, :] * (Y * leb_weights.T)[np.newaxis, :, :], axis = 2)
 
     for l3 in range(l_cutoff):
-        gaunt_coeff = float(gaunt(l1, l2, l3, 0, 0, 0).n(64))  
-        f_l_1 = np.sum(4 * np.pi * erf_array_1 * Y[l3] * leb_weights, axis = 1)
-        f_l_2 = np.sum(4 * np.pi * erf_array_2 * Y[l3] * leb_weights, axis = 1)
-        V1 += f_l_1 * gaunt_coeff
-        V2 += f_l_2 * gaunt_coeff
+        gaunt_coeff = float(gaunt(l1, l2, l3, 0, 0, 0).n(64)) 
+        V1 += f_l_1[:,l3] * gaunt_coeff
+        V2 += f_l_2[:,l3] * gaunt_coeff
         
     V = V1 + V2
 
@@ -139,9 +140,15 @@ def setup_matrix(l_cutoff, N, r, s, alpha_0, theta, leb_weights, Y, D):
 
 def radial(l_cutoff, N, r, s, alpha_0, theta, leb_weights, Y, D, dr_dx, P_x):
 
+    tic = time.time()
     M = setup_matrix(l_cutoff, N, r, s, alpha_0, theta, leb_weights, Y, D)
-   
+    toc = time.time()
+    print(f"time matrix setup: {toc - tic}")
+
+    tic = time.time()
     E, eigf = LA.eigh(M)
+    toc = time.time()
+    print(f"time diagonalization: {toc - tic}")
 
     split_eigf = np.hsplit(eigf.T, l_cutoff)
     sum_l_eigf = np.sum(split_eigf, axis = 0)
@@ -169,12 +176,12 @@ Y = np.array([sph_harm(0, l, phi, theta).real for l in range(l_cutoff)])
 
 s = 2
 
-tic = time.time()
 E, R = radial(l_cutoff, N, r, s, alpha_0, theta, leb_weights, Y, D, dr_dx, P_x)
-toc = time.time()
 
-print(f"time: {toc - tic}")
 print(E)
+
+
+
 
 
 """
