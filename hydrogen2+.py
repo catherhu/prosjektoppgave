@@ -9,14 +9,13 @@ import plotly.graph_objects as go
 import time 
 import os
 from tabulate import tabulate
+import sys
 
 
 r_max = 30 # radial boundaries
-N = 100 # grid size
-l_cutoff = 10
-s = 2 # internuclear distance
-alpha_0 = 0.2
-mu = 30 # regularization constant
+N = 150 # grid size
+l_cutoff = 24
+mu = 10 # regularization constant
 
 
 def setup_grid(N):
@@ -53,33 +52,26 @@ def lebedev(N_lebedev):
     return(theta, phi, leb_weights)
 
 
-def potential(r, a, s, theta, leb_weights, Y):
+def reg_potential(r, a, s, theta, leb_weights, Y):
 
-    V = np.zeros(N - 1)
-    erf_arr = erf_func(r[:, np.newaxis], a, theta[np.newaxis, :], mu) + erf_func(r[:, np.newaxis], a - s, theta[np.newaxis, :], mu)
+    erf_arr = erf_func(r[:, np.newaxis], a + s/2, theta[np.newaxis, :], mu) + erf_func(r[:, np.newaxis], a - s/2, theta[np.newaxis, :], mu)
     f_l = 4*np.pi * np.sum(erf_arr[:, np.newaxis, :] * (Y * leb_weights.T)[np.newaxis, :, :], axis = 2)
 
     return f_l
 
 
-def field_potential(l1, l2, l_cutoff, r, s, alpha_0, theta, leb_weights, Y):
+def reg_field_potential(r, s, alpha_0, theta, leb_weights, Y):
 
-    n_int = 20 # integration points
-    n_array = np.linspace(0, n_int, n_int + 1)
-    a_0 = 1 
-    V_field = np.zeros(N - 1)
-    f_l_field = potential(r, a_0, s, theta, leb_weights, Y) # a_n = a_0
+    n_int = 21 # integration points
+    time_points = np.linspace(0, 1, n_int)
+    dt = time_points[1] - time_points[0]
+    f_l_field = reg_potential(r, 0, s, theta, leb_weights, Y) # a_n = a_0
     
-    for n in n_array[1: -1]:
-        a = a_0 + alpha_0 * np.sin(np.pi * n / n_int)
-        f_l = potential(r, a, s, theta, leb_weights, Y)
-        f_l_field += f_l
-
-    for l3 in range(l_cutoff):
-        gaunt_coeff = float(gaunt(l1, l2, l3, 0, 0, 0).n(64))
-        V_field += f_l_field[:, l3] * gaunt_coeff
-    
-    return - V_field / (n_int + 1)
+    for t in time_points[1: -1]:
+        a = alpha_0 * np.sin(2 * np.pi * t)
+        f_l_field += reg_potential(r, a, s, theta, leb_weights, Y)
+        
+    return f_l_field * dt
 
 
 def D_matrix(N, x, dr_dx):
@@ -98,13 +90,11 @@ def D_matrix(N, x, dr_dx):
     return D
 
 
-def setup_submatrix(l1, l2, l_cutoff, N, r, s, alpha_0, theta, leb_weights, Y, D):
-
-    V = field_potential(l1, l2, l_cutoff, r, s, alpha_0, theta, leb_weights, Y)
+def setup_submatrix(l1, l2, N, r, D, V):
 
     M = np.zeros((N + 1, N + 1))
     d = np.zeros(N + 1)
-    d[1: -1] = V 
+    d[1: -1] = -V 
 
     if l1 == l2:
         M += -0.5*D
@@ -120,10 +110,18 @@ def setup_matrix(l_cutoff, N, r, s, alpha_0, theta, leb_weights, Y, D):
     size = (N - 1) * l_cutoff
     M_block = np.zeros((size, size))
     
+    f_l_field = reg_field_potential(r, s, alpha_0, theta, leb_weights, Y)
+    
     for l1 in range(l_cutoff):
 
         for l2 in range(l1, l_cutoff):
-            M = setup_submatrix(l1, l2, l_cutoff, N, r, s, alpha_0, theta, leb_weights, Y, D)
+            V = np.zeros(N - 1)
+
+            for l3 in range(l_cutoff):
+                gaunt_coeff = float(gaunt(l1, l2, l3, 0, 0, 0).n(64))
+                V += f_l_field[:, l3] * gaunt_coeff
+
+            M = setup_submatrix(l1, l2, N, r, D, V)
             M_block[l1*(N - 1): (l1 + 1)*(N - 1), l2*(N - 1): (l2 + 1)*(N - 1)] = M 
             M_block[l2*(N - 1): (l2 + 1)*(N - 1), l1*(N - 1): (l1 + 1)*(N - 1)] = M
 
@@ -131,16 +129,15 @@ def setup_matrix(l_cutoff, N, r, s, alpha_0, theta, leb_weights, Y, D):
 
 
 def radial(l_cutoff, N, r, s, alpha_0, theta, leb_weights, Y, D, dr_dx, P_x):
-
     tic = time.time()
     M = setup_matrix(l_cutoff, N, r, s, alpha_0, theta, leb_weights, Y, D)
     toc = time.time()
-    print(f"time matrix setup: {toc - tic}")
+    print(toc-tic)
 
     tic = time.time()
     E, eigf = LA.eigh(M)
     toc = time.time()
-    print(f"time diagonalization: {toc - tic}")
+    print(toc-tic)
 
     split_eigf = np.hsplit(eigf.T, l_cutoff)
     sum_l_eigf = np.sum(split_eigf, axis = 0)
@@ -159,35 +156,44 @@ def radial(l_cutoff, N, r, s, alpha_0, theta, leb_weights, Y, D, dr_dx, P_x):
 
 
 
-
-
 x, r, dr_dx, P_x = setup_grid(N)
 D = D_matrix(N, x, dr_dx)
 theta, phi, leb_weights = lebedev(101)
 Y = np.array([sph_harm(0, l, phi, theta).real for l in range(l_cutoff)])
 
-s = 2
+"""
+plt.figure()
+energies = np.zeros((4, 20))
+alpha_0_array = np.array([0, 0.2, 0.8, 2])
+s_array = np.linspace(1, 6, 20)
+for k in range(4):
+    alpha_0 = alpha_0_array[k] 
+    E_list = []
+    
 
+    for s in s_array:
+        E, R = radial(l_cutoff, N, r, s, alpha_0, theta, leb_weights, Y, D, dr_dx, P_x)
+        E_list.append(E)
+    energies[k] = np.array(E_list)
+    plt.plot(s_array, E_list, label = rf"$\alpha_0 = {alpha_0}$")
+
+    
+
+plt.legend()   
+plt.savefig("energy.png") 
+
+dat = dict()
+dat["energies"] = energies
+dat["s"] = s_array
+dat["alpha"] = alpha_0_array
+np.savez('dat.npz', **dat)
+"""
+
+s = float(sys.argv[1]) #2.8
+alpha_0 = 2
 E, R = radial(l_cutoff, N, r, s, alpha_0, theta, leb_weights, Y, D, dr_dx, P_x)
-
 print(E)
 
-
-
-
-
-"""
-s_array = np.linspace(0, 6, 20)   
-E_values = []
-
-for s in s_array[1:]:
-    E, R = radial(l_cutoff, N, r, s, alpha_0, theta, leb_weights, Y, dr_dx, P_x)
-    E_values.append(E)
-
-plt.figure()
-plt.plot(s_array[1:], E_values)
-plt.savefig("energy.png")
-"""
 
 
 """
