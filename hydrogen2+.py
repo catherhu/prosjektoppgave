@@ -53,25 +53,13 @@ def lebedev(N_lebedev):
     return(theta, phi, leb_weights)
 
 
-def potential(l1, l2, l_cutoff, r, a, s, theta, leb_weights, Y):
-    
-    V1 = np.zeros(N - 1)
-    V2 = np.zeros(N - 1)
+def potential(r, a, s, theta, leb_weights, Y):
 
-    erf_arr_1 = erf_func(r[:, np.newaxis], a, theta[np.newaxis, :], mu)
-    erf_arr_2 = erf_func(r[:, np.newaxis], a - s, theta[np.newaxis, :], mu)
+    V = np.zeros(N - 1)
+    erf_arr = erf_func(r[:, np.newaxis], a, theta[np.newaxis, :], mu) + erf_func(r[:, np.newaxis], a - s, theta[np.newaxis, :], mu)
+    f_l = 4*np.pi * np.sum(erf_arr[:, np.newaxis, :] * (Y * leb_weights.T)[np.newaxis, :, :], axis = 2)
 
-    f_l_1 = 4*np.pi * np.sum(erf_arr_1[:, np.newaxis, :] * (Y * leb_weights.T)[np.newaxis, :, :], axis = 2)
-    f_l_2 = 4*np.pi * np.sum(erf_arr_2[:, np.newaxis, :] * (Y * leb_weights.T)[np.newaxis, :, :], axis = 2)
-
-    for l3 in range(l_cutoff):
-        gaunt_coeff = float(gaunt(l1, l2, l3, 0, 0, 0).n(64)) 
-        V1 += f_l_1[:,l3] * gaunt_coeff
-        V2 += f_l_2[:,l3] * gaunt_coeff
-        
-    V = V1 + V2
-
-    return -V
+    return f_l
 
 
 def field_potential(l1, l2, l_cutoff, r, s, alpha_0, theta, leb_weights, Y):
@@ -79,15 +67,19 @@ def field_potential(l1, l2, l_cutoff, r, s, alpha_0, theta, leb_weights, Y):
     n_int = 20 # integration points
     n_array = np.linspace(0, n_int, n_int + 1)
     a_0 = 1 
-
-    V_field = potential(l1, l2, l_cutoff, r, a_0, s, theta, leb_weights, Y) # a_n = a_0
+    V_field = np.zeros(N - 1)
+    f_l_field = potential(r, a_0, s, theta, leb_weights, Y) # a_n = a_0
     
     for n in n_array[1: -1]:
         a = a_0 + alpha_0 * np.sin(np.pi * n / n_int)
-        V = potential(l1, l2, l_cutoff, r, a, s, theta, leb_weights, Y)
-        V_field += V
+        f_l = potential(r, a, s, theta, leb_weights, Y)
+        f_l_field += f_l
+
+    for l3 in range(l_cutoff):
+        gaunt_coeff = float(gaunt(l1, l2, l3, 0, 0, 0).n(64))
+        V_field += f_l_field[:, l3] * gaunt_coeff
     
-    return V_field / (n_int + 1)
+    return - V_field / (n_int + 1)
 
 
 def D_matrix(N, x, dr_dx):
