@@ -13,8 +13,8 @@ import sys
 
 
 r_max = 30 # radial boundaries
-N = 150 # grid size
-l_cutoff = 24
+N = 100 # grid size
+l_cutoff = 30
 mu = 10 # regularization constant
 
 
@@ -155,45 +155,60 @@ def radial(l_cutoff, N, r, s, alpha_0, theta, leb_weights, Y, D, dr_dx, P_x):
     return(E[0] + W, R_norm)
 
 
+def energies_field(l_cutoff, N, r, theta, leb_weights, Y, D, dr_dx, P_x):
+
+    energies = np.zeros((4, 20))
+    alpha_0_array = np.array([0, 0.2, 0.8, 2])
+    s_array = np.linspace(1, 5, 20)
+
+    for k in range(4):
+        alpha_0 = alpha_0_array[k] 
+        E_list = []
+    
+        for s in s_array:
+            E, R = radial(l_cutoff, N, r, s, alpha_0, theta, leb_weights, Y, D, dr_dx, P_x)
+            E_list.append(E)
+
+        energies[k] = np.array(E_list)
+
+    dat = dict()
+    dat["energies"] = energies
+    dat["s"] = s_array
+    dat["alpha"] = alpha_0_array
+    np.savez('dat.npz', **dat)
+
 
 x, r, dr_dx, P_x = setup_grid(N)
 D = D_matrix(N, x, dr_dx)
 theta, phi, leb_weights = lebedev(101)
 Y = np.array([sph_harm(0, l, phi, theta).real for l in range(l_cutoff)])
 
-"""
+
+#energies_field(l_cutoff, N, r, theta, leb_weights, Y, D, dr_dx, P_x)
+
+
+data = np.load('dat.npz')
+energies = data["energies"]
+s_array = data["s"]
+alpha_0_array = data["alpha"]
+
 plt.figure()
-energies = np.zeros((4, 20))
-alpha_0_array = np.array([0, 0.2, 0.8, 2])
-s_array = np.linspace(1, 6, 20)
+
 for k in range(4):
-    alpha_0 = alpha_0_array[k] 
-    E_list = []
-    
-
-    for s in s_array:
-        E, R = radial(l_cutoff, N, r, s, alpha_0, theta, leb_weights, Y, D, dr_dx, P_x)
-        E_list.append(E)
-    energies[k] = np.array(E_list)
-    plt.plot(s_array, E_list, label = rf"$\alpha_0 = {alpha_0}$")
-
-    
+    plt.plot(s_array, energies[k], label = rf"$\alpha_0 = {alpha_0_array[k]}$")
 
 plt.legend()   
-plt.savefig("energy.png") 
+plt.savefig("energies.png") 
 
-dat = dict()
-dat["energies"] = energies
-dat["s"] = s_array
-dat["alpha"] = alpha_0_array
-np.savez('dat.npz', **dat)
+
+
+
 """
-
 s = float(sys.argv[1]) #2.8
 alpha_0 = 2
 E, R = radial(l_cutoff, N, r, s, alpha_0, theta, leb_weights, Y, D, dr_dx, P_x)
 print(E)
-
+"""
 
 
 """
