@@ -6,9 +6,9 @@ from scipy.special import erf
 from scipy.interpolate import CubicSpline
 from sympy.physics.wigner import gaunt
 import plotly.graph_objects as go
+from tabulate import tabulate
 import time 
 import os
-from tabulate import tabulate
 import sys
 
 
@@ -199,8 +199,6 @@ for k in range(4):
 
 plt.legend()   
 plt.savefig("energies.png") 
-
-
 
 
 """
