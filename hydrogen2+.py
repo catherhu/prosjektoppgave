@@ -31,7 +31,7 @@ def setup_grid(N):
     r = r_max/2 * (x + 1)
     dr_dx = r_max/2 * np.ones_like(r)
     
-    return(x, r[1: -1], dr_dx, P_x)
+    return(x[1: -1], r[1: -1], dr_dx[1: -1], P_x[1: -1])
 
 
 def erf_func(r, a, theta, mu):
@@ -76,11 +76,11 @@ def reg_field_potential(r, s, alpha_0, theta, leb_weights, Y):
 
 def D_matrix(N, x, dr_dx):
 
-    D = np.zeros((N + 1, N + 1))
+    D = np.zeros((N - 1, N - 1))
 
-    for i in range(1, N):
+    for i in range(N - 1):
 
-        for j in range(1, N):
+        for j in range(N - 1):
 
             if i == j:
                 D[i][j] = (-1/3)*N*(N + 1)/(1 - x[i]**2)/dr_dx[i]**2
@@ -92,17 +92,16 @@ def D_matrix(N, x, dr_dx):
 
 def setup_submatrix(l1, l2, N, r, D, V):
 
-    M = np.zeros((N + 1, N + 1))
-    d = np.zeros(N + 1)
-    d[1: -1] = -V 
+    M = np.zeros((N - 1, N - 1))
+    d = -V 
 
     if l1 == l2:
         M += -0.5*D
-        d[1: -1] += l1 * (l1 + 1) / (2 * r ** 2)
+        d += l1 * (l1 + 1) / (2 * r ** 2)
 
     np.fill_diagonal(M, M.diagonal() + d)
      
-    return M[1: -1, 1: -1]
+    return M
 
 
 def setup_matrix(l_cutoff, N, r, s, alpha_0, theta, leb_weights, Y, D):
@@ -129,25 +128,20 @@ def setup_matrix(l_cutoff, N, r, s, alpha_0, theta, leb_weights, Y, D):
 
 
 def radial(l_cutoff, N, r, s, alpha_0, theta, leb_weights, Y, D, dr_dx, P_x):
-    tic = time.time()
+    
     M = setup_matrix(l_cutoff, N, r, s, alpha_0, theta, leb_weights, Y, D)
-    toc = time.time()
-    print(toc-tic)
-
-    tic = time.time()
+    
     E, eigf = LA.eigh(M)
-    toc = time.time()
-    print(toc-tic)
 
     split_eigf = np.hsplit(eigf.T, l_cutoff)
     sum_l_eigf = np.sum(split_eigf, axis = 0)
-    f = sum_l_eigf * P_x[1: -1]
-    u = f / np.sqrt(dr_dx[1: -1])
+    f = sum_l_eigf * P_x
+    u = f / np.sqrt(dr_dx)
     R = u / r
     R_norm = np.zeros_like(R)
 
     for i in range((N - 1)*l_cutoff):
-        integral = np.sum(2 / (N * (N + 1) * P_x[1: -1] ** 2) * f[i]**2)
+        integral = np.sum(2 / (N * (N + 1) * P_x ** 2) * f[i]**2)
         R_norm[i] = R[i] / np.sqrt(integral)
 
     W = 1/s
@@ -186,7 +180,7 @@ Y = np.array([sph_harm(0, l, phi, theta).real for l in range(l_cutoff)])
 
 #energies_field(l_cutoff, N, r, theta, leb_weights, Y, D, dr_dx, P_x)
 
-
+"""
 data = np.load('dat.npz')
 energies = data["energies"]
 s_array = data["s"]
@@ -199,14 +193,15 @@ for k in range(4):
 
 plt.legend()   
 plt.savefig("energies.png") 
-
-
 """
-s = float(sys.argv[1]) #2.8
+
+
+#s = float(sys.argv[1]) #2.8
+s = 2
 alpha_0 = 2
 E, R = radial(l_cutoff, N, r, s, alpha_0, theta, leb_weights, Y, D, dr_dx, P_x)
 print(E)
-"""
+
 
 
 """
