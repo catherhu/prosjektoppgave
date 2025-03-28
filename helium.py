@@ -11,7 +11,7 @@ from tabulate import tabulate
 
 
 r_max = 30 # radial boundaries
-N = 50
+N = 100
 
 
 def setup_grid(N):
@@ -46,14 +46,14 @@ def D_matrix(N, x, dr_dx):
     return D
 
 
-def potential(l, r, x, dr_dx, P_x, C_q, C_s):
+def potential(l, r, x, dr_dx, P_x, C):
 
-    V = -2/r + direct_potential(l, r, x, dr_dx, P_x, C_q, C_s)
+    V = -2/r + direct_potential(l, r, x, dr_dx, P_x, C)
     
     return V
 
 
-def direct_potential(l, r, x, dr_dx, P_x, C_q, C_s):
+def direct_potential(l, r, x, dr_dx, P_x, C):
 
     D = np.zeros((N - 1, N - 1))
     B = np.zeros((N - 1, N - 1))
@@ -74,15 +74,15 @@ def direct_potential(l, r, x, dr_dx, P_x, C_q, C_s):
                 D[i][j] = -2/(x[i] - x[j])**2
 
     V_grid = LA.inv(D) @ B
-    V_contracted = np.sum(np.conj(C_q) * C_s * V_grid.T, axis = 0)
+    V_contracted = np.sum(np.conj(C) * C * V_grid.T, axis = 0)
     V_direct = 4*np.pi/(2*l+1) * V_contracted / r
 
     return V_direct
 
 
-def setup_matrix(N, l, r, D):
+def setup_matrix(N, l, r, D, C):
 
-    V = potential(l, r, x, dr_dx, P_x, C_q, C_s)
+    V = potential(l, r, x, dr_dx, P_x, C)
     M = np.zeros((N - 1, N - 1))
     d = V + l*(l + 1)/(2*r**2) # values on the diagonal
     np.fill_diagonal(M, d)
@@ -91,9 +91,9 @@ def setup_matrix(N, l, r, D):
     return M
 
 
-def radial(N, l):
+def radial(N, l, C):
 
-    M = setup_matrix(N, l, r, D)
+    M = setup_matrix(N, l, r, D, C)
 
     E, eigf = LA.eigh(M)
     print(E[0])
@@ -109,16 +109,22 @@ def radial(N, l):
         integral = np.sum(gll_weights * f[i]**2)
         R_norm[i] = R[i] / np.sqrt(integral)
         
-    return(R_norm)
+    return(R_norm, u[0], E[0])
 
 
 x, r, dr_dx, P_x = setup_grid(N)
 D = D_matrix(N, x, dr_dx)
-C_q = np.zeros(N - 1)
-C_s = np.zeros(N - 1)
 
-radial(N, 0)
+C = np.zeros(N - 1) # starting guess
+E_0 = 1 # dummy
+E_0_updated = 0 # dummy
 
+while abs(E_0 - E_0_updated) > 1e-8:
+
+    E_0 = E_0_updated
+    R_norm, u_0, E_0_updated = radial(N, 0, C)
+    C = u_0
+    
 
 
 
